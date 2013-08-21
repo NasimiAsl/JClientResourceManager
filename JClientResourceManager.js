@@ -1,5 +1,5 @@
 /**************************************************** 
-version            : 0.0.0.1                           
+version            : 0.0.0.12                           
 last change date   : 8/21/2013                             
 auther             : R.Nasimi Asl   
 browsers           : independent
@@ -16,10 +16,44 @@ rquirement         : jquery
   two mode is Availible for Set Data
 
   runtime :request and Get Data from Server side with ajax Request or definition by user
-  offline :return availible client Side Data
+  offline :return availible Data from client Side 
    
   ****** important :  You do not need to change their data structure for this module.
-   
+ 
+  call Structure :
+
+  resources
+     .add([params])  * Mandatory
+     .child([params]) ...  * Optional
+     .getList([params with LiveEvent 1]) ... * Optional
+     .getItem([params with LiveEvent 1]) ... * Optional
+
+ *.getList(
+         selector,      // str               :  event control Selector 
+         liveEvent,     // str               :  live event callback -  * important html event names
+         callback,      // fun(data,params)  :  callback for any item
+         filter,        // fun(data,params)  :  callback befor success
+         error,         // fun(data,params)  :  callback when server has error in response
+         finish,        // fun(data,params)  :  finish after success or error
+         level,         // int               :  deep watcher in multi level items
+         params);       // json              :  Helper varilable to send params to server 
+                                                + params.event append after happend live event
+         
+
+ *.getItem(
+         selector,      // str               :  event control Selector 
+         liveEvent,     // str               :  live event callback -  * important html event names
+         callback,      // fun(data,params)  :  callback for result
+         filter,        // fun(data,params)  :  callback befor success
+         error,         // fun(data,params)  :  callback when server has error in response
+         finish,        // fun(data,params)  :  finish after success or error
+         level,         // int               :  deep watcher in multi level items
+         params );      // json              :  Helper varilable to send params to server 
+                                                + params.event append after happend live event
+        
+
+
+
   you can have Multi Level data in one resource Struct
   resources.add().child().child()...; 
   sample :
@@ -35,7 +69,7 @@ rquirement         : jquery
     resources.fetch('[control_uniqeKey]' , function(data){ success} );  
 
 
-    refrence:
+
 
 */
 
@@ -54,14 +88,20 @@ var resourceStruct = {
 
 function setResourceStruct(obj, data, runtime, helper) {
     if (data != null && data != undefined) {
-        obj = resourceStruct;
+        obj = {
+            parent: resourceStruct.parent,
+            runtime: resourceStruct.runtime,
+            helper: resourceStruct.helper
+        }
 
         obj.mode = 'offLine';
         obj.data = data;
     }
     else if (runtime != null && runtime != undefined) {
-        obj = resourceStruct;
-
+        obj = {
+            parent: resourceStruct.parent,
+            helper: resourceStruct.helper
+        }
         obj.mode = 'runtime';
         obj.data = null;
         obj.runtime = runtime;
@@ -132,19 +172,30 @@ var resources = {
         }
         return item;
     },
-    fetchData: function (struct, params, success, filter, error) {
+    fetchData: function (struct, params, success, filter, error, finish) {
         if (struct.mode == 'runtime') {
-            if (struct.runtime.catchEnable && struct.data != null)
-            { success(struct.data); }
-            else
-            {
+            if (struct.runtime.catchEnable && struct.data != null) {
+                if (filter != null && filter != undefined)
+                    data = filter(struct.data, params);
+                success(struct.data);
+                if (finish != null && finish != undefined)
+                    finish(struct.data, params);
+            }
+            else {
                 struct.runtime.ajaxOption.success = function (data) {
                     struct.data = data;
                     if (filter != null && filter != undefined)
                         data = filter(data, params);
                     success(data);
+                    if (finish != null && finish != undefined)
+                        finish(data, params);
                 };
-                struct.runtime.ajaxOption.error = error;
+                struct.runtime.ajaxOption.error = function (data) {
+
+                    error(data);
+                    if (finish != null && finish != undefined)
+                        finish(data, params);
+                };
                 if (params != null && params != undefined)
                     struct.runtime.ajaxOption.data = params;
                 struct.helper(struct.runtime.ajaxOption);
@@ -152,15 +203,47 @@ var resources = {
         }
         else {
             if (filter != null && filter != undefined)
-                data = filter(data, params);
+                data = filter(struct.data, params);
 
             success(struct.data);
+
+            if (finish != null && finish != undefined)
+                finish(struct.data, params);
         }
     },
-    fetch: function (key, params, success, filter, error) {
-        resources.fetchData(resources.getStruct(key), params, success, filter, error);
+    fetch: function (key, params, success, filter, error, finish) {
+        resources.fetchData(resources.getStruct(key), params, success, filter, error, finish);
     },
-    fetchChild: function (key, level, params, success, filter, error) {
-        resources.fetchData(resources.getStruct(key, level), params, success, error);
+    fetchChild: function (key, level, params, success, filter, error, finish) {
+        resources.fetchData(resources.getStruct(key, level), params, success, filter, error, finish);
+    },
+    getItem: function (selector , liveEvent, callback, filter, error, finish, level, params) {
+        $(selector).attr('res_key', resources.currentKey);
+        $(selector).live(liveEvent, function (eventInstance) {
+            var currentControl = this;
+             resources.fetchData(resources.getStruct($(selector).attr('res_key'), level), params,
+                function (data) {
+                    callback(data, params);
+                },
+                filter, error, finish);
+        });
+        return resources;
+    },
+    getList: function (selector , liveEvent, callback, filter, error, finish, level, params) {
+        resources.getItem(
+            selector, 
+            liveEvent,
+            function (data) {
+                for (var k in data) {
+                    callback(data[k], params);
+                }
+            },
+            filter,
+            error,
+            finish,
+            level,
+            params);
+
+        return resources;
     }
 };
